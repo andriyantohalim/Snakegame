@@ -105,8 +105,6 @@ sealed class SnakeForm : Form
         Controls.Add(_pauseButton);
         Controls.Add(_gamePanel);
 
-        KeyDown += OnFormKeyDown;
-
         _timer.Interval = 110;
         _timer.Tick += (_, _) => TickGame();
 
@@ -247,40 +245,53 @@ sealed class SnakeForm : Form
         _pauseButton.Text = _isPaused ? "Resume" : "Pause";
     }
 
-    private void OnFormKeyDown(object? sender, KeyEventArgs e)
+    // Intercept command keys before focused controls use arrows for focus navigation.
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        if (e.KeyCode == Keys.R)
+        return TryHandleGameKey(keyData) || base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private bool TryHandleGameKey(Keys keyData)
+    {
+        var keyCode = keyData & Keys.KeyCode;
+
+        if (keyCode == Keys.R)
         {
             StartNewGame();
-            e.Handled = true;
-            return;
+            return true;
         }
 
-        if (e.KeyCode == Keys.P)
+        if (keyCode == Keys.P)
         {
             TogglePause();
-            e.Handled = true;
-            return;
+            return true;
+        }
+
+        if (keyCode is not (Keys.Up or Keys.Down or Keys.Left or Keys.Right))
+        {
+            return false;
         }
 
         if (_isGameOver || _isPaused)
         {
-            return;
+            return true;
         }
 
-        var proposed = e.KeyCode switch
+        var proposed = keyCode switch
         {
             Keys.Up => Direction.Up,
             Keys.Down => Direction.Down,
             Keys.Left => Direction.Left,
             Keys.Right => Direction.Right,
-            _ => _nextDirection
+            _ => throw new InvalidOperationException($"Unexpected game key: {keyCode}.")
         };
 
         if (!IsOpposite(_direction, proposed))
         {
             _nextDirection = proposed;
         }
+
+        return true;
     }
 
     private static bool IsOpposite(Direction current, Direction proposed)
