@@ -21,14 +21,17 @@ sealed class SnakeForm : Form
     private readonly List<Point> _snake = new();
     private readonly System.Windows.Forms.Timer _timer = new();
     private readonly Label _scoreLabel;
+    private readonly Label _statusLabel;
     private readonly Label _helpLabel;
     private readonly Button _restartButton;
+    private readonly Button _pauseButton;
     private readonly DoubleBufferedPanel _gamePanel;
 
     private Direction _direction = Direction.Right;
     private Direction _nextDirection = Direction.Right;
     private Point _food;
     private int _score;
+    private bool _isPaused;
     private bool _isGameOver;
 
     public SnakeForm()
@@ -40,7 +43,7 @@ sealed class SnakeForm : Form
         KeyPreview = true;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(250, 252, 255);
-        ClientSize = new Size(GridWidth * CellSize + 24, GridHeight * CellSize + 120);
+        ClientSize = new Size(GridWidth * CellSize + 24, GridHeight * CellSize + 136);
 
         _scoreLabel = new Label
         {
@@ -51,36 +54,55 @@ sealed class SnakeForm : Form
             Text = "Score: 0"
         };
 
-        _helpLabel = new Label
+        _statusLabel = new Label
         {
             AutoSize = true,
             Location = new Point(12, 40),
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            ForeColor = Color.FromArgb(46, 125, 50),
+            Text = "Running"
+        };
+
+        _helpLabel = new Label
+        {
+            AutoSize = true,
+            Location = new Point(12, 64),
             Font = new Font("Segoe UI", 9),
             ForeColor = Color.FromArgb(85, 100, 124),
-            Text = "Use arrow keys to move."
+            Text = "Use arrow keys to move. Press P to pause/resume and R to restart."
         };
 
         _restartButton = new Button
         {
-            Location = new Point(ClientSize.Width - 110, 14),
+            Location = new Point(ClientSize.Width - 208, 14),
             Size = new Size(94, 30),
             Text = "Restart",
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
-            Visible = false
+            Font = new Font("Segoe UI", 9, FontStyle.Bold)
         };
         _restartButton.Click += (_, _) => StartNewGame();
 
+        _pauseButton = new Button
+        {
+            Location = new Point(ClientSize.Width - 110, 14),
+            Size = new Size(94, 30),
+            Text = "Pause",
+            Font = new Font("Segoe UI", 9, FontStyle.Bold)
+        };
+        _pauseButton.Click += (_, _) => TogglePause();
+
         _gamePanel = new DoubleBufferedPanel
         {
-            Location = new Point(12, 72),
+            Location = new Point(12, 96),
             Size = new Size(GridWidth * CellSize, GridHeight * CellSize),
             BackColor = Color.White
         };
         _gamePanel.Paint += OnGamePanelPaint;
 
         Controls.Add(_scoreLabel);
+        Controls.Add(_statusLabel);
         Controls.Add(_helpLabel);
         Controls.Add(_restartButton);
+        Controls.Add(_pauseButton);
         Controls.Add(_gamePanel);
 
         KeyDown += OnFormKeyDown;
@@ -101,13 +123,13 @@ sealed class SnakeForm : Form
         _direction = Direction.Right;
         _nextDirection = Direction.Right;
         _score = 0;
+        _isPaused = false;
         _isGameOver = false;
-        _restartButton.Visible = false;
-        _helpLabel.Text = "Use arrow keys to move.";
         _timer.Interval = 110;
 
         SpawnFood();
         UpdateScore();
+        UpdateGameStateUi("Running");
         _gamePanel.Invalidate();
         _timer.Start();
         _gamePanel.Focus();
@@ -115,7 +137,7 @@ sealed class SnakeForm : Form
 
     private void TickGame()
     {
-        if (_isGameOver)
+        if (_isGameOver || _isPaused)
         {
             return;
         }
@@ -165,11 +187,33 @@ sealed class SnakeForm : Form
 
     private void EndGame(string message)
     {
+        _isPaused = false;
         _isGameOver = true;
         _timer.Stop();
-        _helpLabel.Text = message;
-        _restartButton.Visible = true;
+        UpdateGameStateUi(message);
         _gamePanel.Invalidate();
+    }
+
+    private void TogglePause()
+    {
+        if (_isGameOver)
+        {
+            return;
+        }
+
+        _isPaused = !_isPaused;
+        if (_isPaused)
+        {
+            _timer.Stop();
+            UpdateGameStateUi("Paused");
+        }
+        else
+        {
+            _timer.Start();
+            UpdateGameStateUi("Running");
+        }
+
+        _gamePanel.Focus();
     }
 
     private bool HitsWall(Point point)
@@ -190,8 +234,40 @@ sealed class SnakeForm : Form
         _scoreLabel.Text = $"Score: {_score}";
     }
 
+    private void UpdateGameStateUi(string statusText)
+    {
+        _statusLabel.Text = statusText;
+        _statusLabel.ForeColor = _isGameOver
+            ? Color.FromArgb(198, 40, 40)
+            : _isPaused
+                ? Color.FromArgb(239, 108, 0)
+                : Color.FromArgb(46, 125, 50);
+
+        _pauseButton.Enabled = !_isGameOver;
+        _pauseButton.Text = _isPaused ? "Resume" : "Pause";
+    }
+
     private void OnFormKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.R)
+        {
+            StartNewGame();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.KeyCode == Keys.P)
+        {
+            TogglePause();
+            e.Handled = true;
+            return;
+        }
+
+        if (_isGameOver || _isPaused)
+        {
+            return;
+        }
+
         var proposed = e.KeyCode switch
         {
             Keys.Up => Direction.Up,
@@ -255,16 +331,27 @@ sealed class SnakeForm : Form
         using var borderPen = new Pen(Color.FromArgb(162, 184, 216), 2);
         g.DrawRectangle(borderPen, 1, 1, GridWidth * CellSize - 2, GridHeight * CellSize - 2);
 
-        if (_isGameOver)
+        if (_isGameOver || _isPaused)
         {
-            using var overlayBrush = new SolidBrush(Color.FromArgb(140, 10, 20, 35));
+            var overlayColor = _isGameOver
+                ? Color.FromArgb(140, 10, 20, 35)
+                : Color.FromArgb(110, 32, 52, 82);
+            var heading = _isGameOver ? "Game Over" : "Paused";
+            var detail = _isGameOver ? "Press Restart or R to play again." : "Press Resume or P to keep going.";
+
+            using var overlayBrush = new SolidBrush(overlayColor);
             g.FillRectangle(overlayBrush, 0, 0, _gamePanel.Width, _gamePanel.Height);
 
             using var textBrush = new SolidBrush(Color.White);
-            using var font = new Font("Segoe UI", 16, FontStyle.Bold);
-            var text = "Game Over";
-            var size = g.MeasureString(text, font);
-            g.DrawString(text, font, textBrush, (_gamePanel.Width - size.Width) / 2, (_gamePanel.Height - size.Height) / 2);
+            using var headingFont = new Font("Segoe UI", 16, FontStyle.Bold);
+            using var detailFont = new Font("Segoe UI", 10, FontStyle.Regular);
+
+            var headingSize = g.MeasureString(heading, headingFont);
+            var detailSize = g.MeasureString(detail, detailFont);
+            var centerY = _gamePanel.Height / 2f;
+
+            g.DrawString(heading, headingFont, textBrush, (_gamePanel.Width - headingSize.Width) / 2, centerY - headingSize.Height);
+            g.DrawString(detail, detailFont, textBrush, (_gamePanel.Width - detailSize.Width) / 2, centerY + 6);
         }
     }
 
