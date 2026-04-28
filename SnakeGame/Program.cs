@@ -1,24 +1,12 @@
+using SnakeGame.Core;
 using System.Drawing.Drawing2D;
 
 ApplicationConfiguration.Initialize();
 Application.Run(new SnakeForm());
 
-enum Direction
-{
-    Up,
-    Down,
-    Left,
-    Right
-}
-
 sealed class SnakeForm : Form
 {
-    private const int GridWidth = 24;
-    private const int GridHeight = 18;
-    private const int CellSize = 24;
-
-    private readonly Random _random = new();
-    private readonly List<Point> _snake = new();
+    private readonly SnakeGameEngine _engine = new();
     private readonly System.Windows.Forms.Timer _timer = new();
     private readonly Label _scoreLabel;
     private readonly Label _statusLabel;
@@ -26,13 +14,6 @@ sealed class SnakeForm : Form
     private readonly Button _restartButton;
     private readonly Button _pauseButton;
     private readonly DoubleBufferedPanel _gamePanel;
-
-    private Direction _direction = Direction.Right;
-    private Direction _nextDirection = Direction.Right;
-    private Point _food;
-    private int _score;
-    private bool _isPaused;
-    private bool _isGameOver;
 
     public SnakeForm()
     {
@@ -43,7 +24,8 @@ sealed class SnakeForm : Form
         KeyPreview = true;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(250, 252, 255);
-        ClientSize = new Size(GridWidth * CellSize + 24, GridHeight * CellSize + 136);
+        ClientSize = new Size(SnakeGameEngine.GridWidth * SnakeGameEngine.CellSize + 24,
+                              SnakeGameEngine.GridHeight * SnakeGameEngine.CellSize + 136);
 
         _scoreLabel = new Label
         {
@@ -93,7 +75,8 @@ sealed class SnakeForm : Form
         _gamePanel = new DoubleBufferedPanel
         {
             Location = new Point(12, 96),
-            Size = new Size(GridWidth * CellSize, GridHeight * CellSize),
+            Size = new Size(SnakeGameEngine.GridWidth * SnakeGameEngine.CellSize,
+                            SnakeGameEngine.GridHeight * SnakeGameEngine.CellSize),
             BackColor = Color.White
         };
         _gamePanel.Paint += OnGamePanelPaint;
@@ -105,7 +88,6 @@ sealed class SnakeForm : Form
         Controls.Add(_pauseButton);
         Controls.Add(_gamePanel);
 
-        _timer.Interval = 110;
         _timer.Tick += (_, _) => TickGame();
 
         StartNewGame();
@@ -113,19 +95,8 @@ sealed class SnakeForm : Form
 
     private void StartNewGame()
     {
-        _snake.Clear();
-        _snake.Add(new Point(GridWidth / 2, GridHeight / 2));
-        _snake.Add(new Point(GridWidth / 2 - 1, GridHeight / 2));
-        _snake.Add(new Point(GridWidth / 2 - 2, GridHeight / 2));
-
-        _direction = Direction.Right;
-        _nextDirection = Direction.Right;
-        _score = 0;
-        _isPaused = false;
-        _isGameOver = false;
-        _timer.Interval = 110;
-
-        SpawnFood();
+        _engine.StartNewGame();
+        _timer.Interval = _engine.TimerInterval;
         UpdateScore();
         UpdateGameStateUi("Running");
         _gamePanel.Invalidate();
@@ -135,49 +106,20 @@ sealed class SnakeForm : Form
 
     private void TickGame()
     {
-        if (_isGameOver || _isPaused)
-        {
-            return;
-        }
+        var result = _engine.Tick();
 
-        _direction = _nextDirection;
-        var head = _snake[0];
-
-        var nextHead = _direction switch
+        switch (result)
         {
-            Direction.Up => new Point(head.X, head.Y - 1),
-            Direction.Down => new Point(head.X, head.Y + 1),
-            Direction.Left => new Point(head.X - 1, head.Y),
-            Direction.Right => new Point(head.X + 1, head.Y),
-            _ => head
-        };
-
-        if (HitsWall(nextHead))
-        {
-            EndGame("Game over: wall collision.");
-            return;
-        }
-
-        var grows = nextHead == _food;
-        var bodyCountToCheck = grows ? _snake.Count : _snake.Count - 1;
-        if (_snake.Take(bodyCountToCheck).Contains(nextHead))
-        {
-            EndGame("Game over: you hit yourself.");
-            return;
-        }
-
-        _snake.Insert(0, nextHead);
-
-        if (grows)
-        {
-            _score++;
-            _timer.Interval = Math.Max(65, _timer.Interval - 3);
-            SpawnFood();
-            UpdateScore();
-        }
-        else
-        {
-            _snake.RemoveAt(_snake.Count - 1);
+            case TickResult.HitWall:
+                EndGame("Game over: wall collision.");
+                return;
+            case TickResult.HitSelf:
+                EndGame("Game over: you hit yourself.");
+                return;
+            case TickResult.AteFood:
+                _timer.Interval = _engine.TimerInterval;
+                UpdateScore();
+                break;
         }
 
         _gamePanel.Invalidate();
@@ -185,8 +127,6 @@ sealed class SnakeForm : Form
 
     private void EndGame(string message)
     {
-        _isPaused = false;
-        _isGameOver = true;
         _timer.Stop();
         UpdateGameStateUi(message);
         _gamePanel.Invalidate();
@@ -194,13 +134,10 @@ sealed class SnakeForm : Form
 
     private void TogglePause()
     {
-        if (_isGameOver)
-        {
+        if (!_engine.TogglePause())
             return;
-        }
 
-        _isPaused = !_isPaused;
-        if (_isPaused)
+        if (_engine.IsPaused)
         {
             _timer.Stop();
             UpdateGameStateUi("Paused");
@@ -214,35 +151,22 @@ sealed class SnakeForm : Form
         _gamePanel.Focus();
     }
 
-    private bool HitsWall(Point point)
-    {
-        return point.X < 0 || point.X >= GridWidth || point.Y < 0 || point.Y >= GridHeight;
-    }
-
-    private void SpawnFood()
-    {
-        do
-        {
-            _food = new Point(_random.Next(GridWidth), _random.Next(GridHeight));
-        } while (_snake.Contains(_food));
-    }
-
     private void UpdateScore()
     {
-        _scoreLabel.Text = $"Score: {_score}";
+        _scoreLabel.Text = $"Score: {_engine.Score}";
     }
 
     private void UpdateGameStateUi(string statusText)
     {
         _statusLabel.Text = statusText;
-        _statusLabel.ForeColor = _isGameOver
+        _statusLabel.ForeColor = _engine.IsGameOver
             ? Color.FromArgb(198, 40, 40)
-            : _isPaused
+            : _engine.IsPaused
                 ? Color.FromArgb(239, 108, 0)
                 : Color.FromArgb(46, 125, 50);
 
-        _pauseButton.Enabled = !_isGameOver;
-        _pauseButton.Text = _isPaused ? "Resume" : "Pause";
+        _pauseButton.Enabled = !_engine.IsGameOver;
+        _pauseButton.Text = _engine.IsPaused ? "Resume" : "Pause";
     }
 
     // Intercept command keys before focused controls use arrows for focus navigation.
@@ -272,7 +196,7 @@ sealed class SnakeForm : Form
             return false;
         }
 
-        if (_isGameOver || _isPaused)
+        if (_engine.IsGameOver || _engine.IsPaused)
         {
             return true;
         }
@@ -286,24 +210,8 @@ sealed class SnakeForm : Form
             _ => throw new InvalidOperationException($"Unexpected game key: {keyCode}.")
         };
 
-        if (!IsOpposite(_direction, proposed))
-        {
-            _nextDirection = proposed;
-        }
-
+        _engine.TrySetDirection(proposed);
         return true;
-    }
-
-    private static bool IsOpposite(Direction current, Direction proposed)
-    {
-        return (current, proposed) switch
-        {
-            (Direction.Up, Direction.Down) => true,
-            (Direction.Down, Direction.Up) => true,
-            (Direction.Left, Direction.Right) => true,
-            (Direction.Right, Direction.Left) => true,
-            _ => false
-        };
     }
 
     private void OnGamePanelPaint(object? sender, PaintEventArgs e)
@@ -313,25 +221,28 @@ sealed class SnakeForm : Form
         g.Clear(Color.FromArgb(242, 246, 252));
 
         using var gridPen = new Pen(Color.FromArgb(226, 234, 246));
-        for (var x = 0; x <= GridWidth; x++)
+        for (var x = 0; x <= SnakeGameEngine.GridWidth; x++)
         {
-            g.DrawLine(gridPen, x * CellSize, 0, x * CellSize, GridHeight * CellSize);
+            g.DrawLine(gridPen, x * SnakeGameEngine.CellSize, 0,
+                                x * SnakeGameEngine.CellSize, SnakeGameEngine.GridHeight * SnakeGameEngine.CellSize);
         }
 
-        for (var y = 0; y <= GridHeight; y++)
+        for (var y = 0; y <= SnakeGameEngine.GridHeight; y++)
         {
-            g.DrawLine(gridPen, 0, y * CellSize, GridWidth * CellSize, y * CellSize);
+            g.DrawLine(gridPen, 0, y * SnakeGameEngine.CellSize,
+                                SnakeGameEngine.GridWidth * SnakeGameEngine.CellSize, y * SnakeGameEngine.CellSize);
         }
 
         using var foodBrush = new SolidBrush(Color.FromArgb(234, 67, 53));
-        var foodRect = CellToRect(_food);
+        var foodRect = SnakeGameEngine.CellToRect(_engine.Food);
         foodRect.Inflate(-3, -3);
         g.FillEllipse(foodBrush, foodRect);
 
-        for (var i = _snake.Count - 1; i >= 0; i--)
+        var snake = _engine.Snake;
+        for (var i = snake.Count - 1; i >= 0; i--)
         {
-            var segment = _snake[i];
-            var rect = CellToRect(segment);
+            var segment = snake[i];
+            var rect = SnakeGameEngine.CellToRect(segment);
             rect.Inflate(-2, -2);
 
             var color = i == 0 ? Color.FromArgb(46, 125, 50) : Color.FromArgb(102, 187, 106);
@@ -340,15 +251,17 @@ sealed class SnakeForm : Form
         }
 
         using var borderPen = new Pen(Color.FromArgb(162, 184, 216), 2);
-        g.DrawRectangle(borderPen, 1, 1, GridWidth * CellSize - 2, GridHeight * CellSize - 2);
+        g.DrawRectangle(borderPen, 1, 1,
+            SnakeGameEngine.GridWidth * SnakeGameEngine.CellSize - 2,
+            SnakeGameEngine.GridHeight * SnakeGameEngine.CellSize - 2);
 
-        if (_isGameOver || _isPaused)
+        if (_engine.IsGameOver || _engine.IsPaused)
         {
-            var overlayColor = _isGameOver
+            var overlayColor = _engine.IsGameOver
                 ? Color.FromArgb(140, 10, 20, 35)
                 : Color.FromArgb(110, 32, 52, 82);
-            var heading = _isGameOver ? "Game Over" : "Paused";
-            var detail = _isGameOver ? "Press Restart or R to play again." : "Press Resume or P to keep going.";
+            var heading = _engine.IsGameOver ? "Game Over" : "Paused";
+            var detail = _engine.IsGameOver ? "Press Restart or R to play again." : "Press Resume or P to keep going.";
 
             using var overlayBrush = new SolidBrush(overlayColor);
             g.FillRectangle(overlayBrush, 0, 0, _gamePanel.Width, _gamePanel.Height);
@@ -364,11 +277,6 @@ sealed class SnakeForm : Form
             g.DrawString(heading, headingFont, textBrush, (_gamePanel.Width - headingSize.Width) / 2, centerY - headingSize.Height);
             g.DrawString(detail, detailFont, textBrush, (_gamePanel.Width - detailSize.Width) / 2, centerY + 6);
         }
-    }
-
-    private static Rectangle CellToRect(Point point)
-    {
-        return new Rectangle(point.X * CellSize, point.Y * CellSize, CellSize, CellSize);
     }
 }
 

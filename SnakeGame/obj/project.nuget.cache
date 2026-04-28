@@ -1,8 +1,13 @@
 {
   "version": 2,
-  "dgSpecHash": "xmwVYrfcPZo=",
+  "dgSpecHash": "uGV1bGOsmzI=",
   "success": true,
-  "projectFilePath": "C:\\Users\\andri\\OneDrive\\Documents\\New project\\SnakeGame\\SnakeGame.csproj",
-  "expectedPackageFiles": [],
+  "projectFilePath": "/home/runner/work/Snakegame/Snakegame/SnakeGame/SnakeGame.csproj",
+  "expectedPackageFiles": [
+    "/tmp/codeql-scratch-bb0bbdcb3bc77567/dbs/csharp/working/packages/microsoft.netcore.app.ref/9.0.14/microsoft.netcore.app.ref.9.0.14.nupkg.sha512",
+    "/tmp/codeql-scratch-bb0bbdcb3bc77567/dbs/csharp/working/packages/microsoft.windowsdesktop.app.ref/9.0.14/microsoft.windowsdesktop.app.ref.9.0.14.nupkg.sha512",
+    "/tmp/codeql-scratch-bb0bbdcb3bc77567/dbs/csharp/working/packages/microsoft.aspnetcore.app.ref/9.0.14/microsoft.aspnetcore.app.ref.9.0.14.nupkg.sha512",
+    "/tmp/codeql-scratch-bb0bbdcb3bc77567/dbs/csharp/working/packages/microsoft.netcore.app.host.linux-x64/9.0.14/microsoft.netcore.app.host.linux-x64.9.0.14.nupkg.sha512"
+  ],
   "logs": []
 }
